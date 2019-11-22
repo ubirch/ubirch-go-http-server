@@ -6,14 +6,21 @@ import (
 	"net/http"
 )
 
-func sign(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method == "POST" {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "got it!"}`))
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"message": "http method not implemented"}`))
+func sign(srv *HTTPServer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		reqBody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if r.Method == "POST" {
+			srv.handler<-reqBody
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message": "http method not implemented"}`))
+		}
 	}
 }
 
@@ -38,9 +45,11 @@ type HTTPServer struct {
 	handler chan []byte
 }
 
+
 func (srv *HTTPServer) Listen() error {
-	http.HandleFunc("/sign", sign)
-	http.HandleFunc("/verify", verify)
+
+    http.HandleFunc("/sign", sign(srv))
+	http.HandleFunc("/verify", verify(srv))
 
 	return http.ListenAndServe(":8080", nil)
 }
