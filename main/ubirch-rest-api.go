@@ -56,17 +56,18 @@ type HTTPServer struct {
 func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	go func() {
-		<-ctx.Done()
-		log.Println("shutting down http server")
-		// todo end ListenAndServe here
-		return
-	}()
-
+	s := &http.Server{Addr: ":8080"}
 	http.HandleFunc("/sign", sign(srv))
 	http.HandleFunc("/verify", verify(srv))
 
-	err := http.ListenAndServe(":8080", nil)
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down http server")
+		s.Shutdown(ctx)
+		return
+	}()
+
+	err := s.ListenAndServe()
 	if err != nil {
 		log.Fatalf("error starting http service: %v", err)
 	}
