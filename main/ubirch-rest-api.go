@@ -53,10 +53,13 @@ type HTTPServer struct {
 	verifyHandler chan []byte
 }
 
-func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) error {
+func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
 
 	http.HandleFunc("/sign", sign(srv))
 	http.HandleFunc("/verify", verify(srv))
 
-	return http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatalf("error starting http service: %v", err)
+	}
 }

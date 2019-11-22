@@ -44,18 +44,17 @@ func main() {
 
 	// listen to messages
 	server := HTTPServer{signHandler: msgsToSign, verifyHandler: msgsToVrfy}
-	err := server.Listen(ctx, &wg)
-	if err != nil {
-		log.Fatalf("error starting service: %v", err)
-	}
+	go server.Listen(ctx, &wg)
 	wg.Add(1)
 
-	select {
-	case vMsg := <-msgsToVrfy:
-		log.Println("msgsToVrfy:")
-		log.Println(vMsg)
-	case sMsg := <-msgsToSign:
-		log.Println("msgsToSign:")
-		log.Println(sMsg)
+	for {
+		select {
+		case vMsg := <-msgsToVrfy:
+			log.Println("msgsToVrfy:")
+			log.Println(string(vMsg))
+		case sMsg := <-msgsToSign:
+			log.Println("msgsToSign:")
+			log.Println(string(sMsg))
+		}
 	}
 }
