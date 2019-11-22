@@ -54,6 +54,14 @@ type HTTPServer struct {
 }
 
 func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down http server")
+		// todo end ListenAndServe here
+		return
+	}()
 
 	http.HandleFunc("/sign", sign(srv))
 	http.HandleFunc("/verify", verify(srv))
