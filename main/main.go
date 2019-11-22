@@ -7,7 +7,7 @@ func main() {
 	msgsToSign := make(chan []byte, 100)
 
 	// listen to messages to ubirch (sign)
-	httpSrvSign := HTTPServer{handler: msgsToSign}
+	httpSrvSign := HTTPServer{signHandler: msgsToSign, verifyHandler: nil}
 	err := httpSrvSign.Listen()
 	if err != nil {
 		log.Fatalf("error starting signing service: %v", err)
@@ -17,7 +17,7 @@ func main() {
 	msgsToVrfy := make(chan []byte, 100)
 
 	// listen to messages to verify
-	httpSrvVrfy := HTTPServer{handler: msgsToVrfy}
+	httpSrvVrfy := HTTPServer{verifyHandler: msgsToVrfy, signHandler: nil}
 	err = httpSrvVrfy.Listen()
 	if err != nil {
 		log.Fatalf("error starting verification service: %v", err)

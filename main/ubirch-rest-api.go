@@ -8,47 +8,50 @@ import (
 
 func sign(srv *HTTPServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error reading http request body: %v", err)
+			return
 		}
 
 		if r.Method == "POST" {
-			srv.handler<-reqBody
+			srv.signHandler <- reqBody
 			w.WriteHeader(http.StatusOK)
 		} else {
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"message": "http method not implemented"}`))
 		}
 	}
 }
 
-func verify(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method == "POST" {
+func verify(srv *HTTPServer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error reading http request body: %v", err)
+			return
 		}
-		log.Printf("%s", reqBody)
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "got it!"}`))
-	} else {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"message": "http method not implemented"}`))
+		if r.Method == "POST" {
+			srv.verifyHandler <- reqBody
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message": "http method not implemented"}`))
+		}
 	}
 }
 
 type HTTPServer struct {
-	handler chan []byte
+	signHandler   chan []byte
+	verifyHandler chan []byte
 }
-
 
 func (srv *HTTPServer) Listen() error {
 
-    http.HandleFunc("/sign", sign(srv))
+	http.HandleFunc("/sign", sign(srv))
 	http.HandleFunc("/verify", verify(srv))
 
 	return http.ListenAndServe(":8080", nil)
