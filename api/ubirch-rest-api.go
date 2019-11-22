@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func sign(srv *HTTPServer) http.HandlerFunc {
 
 		if r.Method == "POST" {
 			log.Println(reqBody)
-			srv.signHandler <- reqBody
+			srv.SignHandler <- reqBody
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
@@ -38,7 +38,7 @@ func verify(srv *HTTPServer) http.HandlerFunc {
 
 		if r.Method == "POST" {
 			log.Println(reqBody)
-			srv.verifyHandler <- reqBody
+			srv.VerifyHandler <- reqBody
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
@@ -49,8 +49,8 @@ func verify(srv *HTTPServer) http.HandlerFunc {
 }
 
 type HTTPServer struct {
-	signHandler   chan []byte
-	verifyHandler chan []byte
+	SignHandler   chan []byte
+	VerifyHandler chan []byte
 }
 
 func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {

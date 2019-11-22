@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/ubirch/ubirch-go-http-server/api"
 	"log"
 	"os"
 	"os/signal"
@@ -43,7 +44,7 @@ func main() {
 	msgsToVrfy := make(chan []byte, 100)
 
 	// listen to messages
-	server := HTTPServer{signHandler: msgsToSign, verifyHandler: msgsToVrfy}
+	server := api.HTTPServer{SignHandler: msgsToSign, VerifyHandler: msgsToVrfy}
 	go server.Listen(ctx, &wg)
 	wg.Add(1)
 
