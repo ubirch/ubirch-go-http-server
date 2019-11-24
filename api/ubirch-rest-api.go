@@ -68,7 +68,7 @@ func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 
 	err := s.ListenAndServe()
-	if err != nil {
+	if err != nil && err != http.ErrServerClosed {
 		log.Fatalf("error starting http service: %v", err)
 	}
 }

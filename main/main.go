@@ -23,6 +23,7 @@ func shutdown(signals chan os.Signal, wg *sync.WaitGroup, cancel context.CancelF
 	cancel()
 	wg.Wait()
 
+	log.Println("clean exit")
 	os.Exit(0)
 }
 
