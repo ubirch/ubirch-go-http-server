@@ -12,6 +12,7 @@ import (
 	"sync"
 )
 
+// helper function to determine if a list contains a certain string
 func stringInList(a string, list []string) bool {
 	for _, b := range list {
 		if b == a {
@@ -75,10 +76,13 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 		}
 
 		// wait for response from ubirch backend to be forwarded
-		// TODO check performance
+		//todo check performance
 		select {
 		case resp := <-responseChan:
 			w.WriteHeader(resp.Code)
+			for k, v := range resp.Header {
+				w.Header().Set(k, v[0])
+			}
 			w.Write(resp.Content)
 		}
 	}
@@ -97,6 +101,7 @@ type HTTPServer struct {
 
 type Response struct {
 	Code    int
+	Header  map[string][]string
 	Content []byte
 }
 
