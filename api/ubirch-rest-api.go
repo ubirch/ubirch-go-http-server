@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,33 +25,50 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 	return func(w http.ResponseWriter, r *http.Request) {
 		// only accept POST requests
 		if r.Method != "POST" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"message": "http method not implemented"}`))
+			log.Printf("recieved %s request. (not implemented)", r.Method)
+			returnErrorResponse(w, http.StatusNotFound, "http method not implemented")
+			return
 		}
 
 		// read request body
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			log.Printf("error reading http request body: %v", err)
+			returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error reading request body: %v", err))
 			return
 		}
 
-		//
+		// check if request body is a json object
 		if stringInList("application/json", r.Header["Content-Type"]) {
-			// make a sorted compact rendering of the json formatted request body before forwarding it to the signer
+			// get UUID from header
+			uuidString := r.Header.Get("UUID")
+			if uuidString == "" {
+				log.Printf("missing UUID header")
+				returnErrorResponse(w, http.StatusBadRequest, "missing UUID")
+				return
+			}
+			id, err := uuid.Parse(uuidString)
+			if err != nil {
+				log.Printf("error parsing UUID: %v", err)
+				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing UUID: %v", err))
+				return
+			}
+
+			// generate a sorted compact rendering of the json formatted request body before forwarding it to the signer
 			var reqDump interface{}
+			var compactSortedJson bytes.Buffer
+
 			err = json.Unmarshal(reqBody, &reqDump)
 			if err != nil {
 				log.Printf("error parsing http request body to json: %v", err)
+				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing request body: %v", err))
 				return
 			}
 			// json.Marshal sorts the keys
 			sortedJson, _ := json.Marshal(reqDump)
-			var compactSortedJson bytes.Buffer
-			err = json.Compact(&compactSortedJson, sortedJson)
+			_ = json.Compact(&compactSortedJson, sortedJson)
 
-			//requestChan <- append(compactSortedJson.Bytes())
+			requestChan <- append(id[:], compactSortedJson.Bytes()...)
 
 		} else {
 			requestChan <- reqBody
@@ -63,6 +82,12 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 			w.Write(resp.Content)
 		}
 	}
+}
+
+func returnErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	w.WriteHeader(statusCode)
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(message))
 }
 
 type HTTPServer struct {
