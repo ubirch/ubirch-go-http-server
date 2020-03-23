@@ -45,7 +45,7 @@ func main() {
 	msgsToVrfy := make(chan []byte, 100)
 
 	// listen to messages
-	server := api.HTTPServer{SignHandler: msgsToSign, VerifyHandler: msgsToVrfy}
+	server := api.HTTPServer{SigningRequestChan: msgsToSign, VerificationRequestChan: msgsToVrfy}
 	go server.Listen(ctx, &wg)
 	wg.Add(1)
 
