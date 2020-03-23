@@ -22,11 +22,17 @@ func stringInList(a string, list []string) bool {
 	return false
 }
 
-func handleRequest(requestChan chan []byte, responseChan chan Response) http.HandlerFunc {
+func returnErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	log.Println(message)
+	w.WriteHeader(statusCode)
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(message))
+}
+
+func handleRequest(srv *HTTPServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// only accept POST requests
 		if r.Method != "POST" {
-			log.Printf("recieved %s request. (not implemented)", r.Method)
 			returnErrorResponse(w, http.StatusNotFound, "http method not implemented")
 			return
 		}
@@ -34,7 +40,6 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 		// read request body
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("error reading http request body: %v", err)
 			returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error reading request body: %v", err))
 			return
 		}
@@ -42,16 +47,16 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 		// check if request body is a json object
 		if stringInList("application/json", r.Header["Content-Type"]) {
 			// get UUID from header
-			uuidString := r.Header.Get("UUID")
-			if uuidString == "" {
-				log.Printf("missing UUID header")
-				returnErrorResponse(w, http.StatusBadRequest, "missing UUID")
+			id, err := uuid.Parse(r.Header.Get("UUID"))
+			if err != nil {
+				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing UUID: %v", err))
 				return
 			}
-			id, err := uuid.Parse(uuidString)
-			if err != nil {
-				log.Printf("error parsing UUID: %v", err)
-				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing UUID: %v", err))
+
+			// check authorization
+			auth := r.Header.Get("AUTHTOKEN")
+			if auth != srv.Auth[id.String()] {
+				returnErrorResponse(w, http.StatusUnauthorized, fmt.Sprintf("invalid auth token"))
 				return
 			}
 
@@ -61,7 +66,6 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 
 			err = json.Unmarshal(reqBody, &reqDump)
 			if err != nil {
-				log.Printf("error parsing http request body to json: %v", err)
 				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing request body: %v", err))
 				return
 			}
@@ -69,16 +73,16 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 			sortedJson, _ := json.Marshal(reqDump)
 			_ = json.Compact(&compactSortedJson, sortedJson)
 
-			requestChan <- append(id[:], compactSortedJson.Bytes()...)
+			srv.ReceiveHandler <- append(id[:], compactSortedJson.Bytes()...)
 
 		} else {
-			requestChan <- reqBody
+			srv.ReceiveHandler <- reqBody
 		}
 
 		// wait for response from ubirch backend to be forwarded
 		//todo check performance
 		select {
-		case resp := <-responseChan:
+		case resp := <-srv.ResponseHandler:
 			w.WriteHeader(resp.Code)
 			for k, v := range resp.Header {
 				w.Header().Set(k, v[0])
@@ -88,15 +92,10 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 	}
 }
 
-func returnErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	w.WriteHeader(statusCode)
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(message))
-}
-
 type HTTPServer struct {
 	ReceiveHandler  chan []byte
 	ResponseHandler chan Response
+	Auth            map[string]string
 }
 
 type Response struct {
@@ -109,7 +108,7 @@ func (srv *HTTPServer) Listen(endpoint string, ctx context.Context, wg *sync.Wai
 	defer wg.Done()
 
 	s := &http.Server{Addr: ":8080"}
-	http.HandleFunc(endpoint, handleRequest(srv.ReceiveHandler, srv.ResponseHandler))
+	http.HandleFunc(endpoint, handleRequest(srv))
 
 	go func() {
 		<-ctx.Done()
