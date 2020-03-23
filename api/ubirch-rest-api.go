@@ -24,8 +24,8 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 			// wait for response from ubirch backend to be forwarded
 			select {
 			case resp := <-responseChan:
-				w.WriteHeader(resp.code)
-				w.Write(resp.content)
+				w.WriteHeader(resp.Code)
+				w.Write(resp.Content)
 			}
 		} else {
 			w.Header().Set("Content-Type", "application/json")
@@ -36,23 +36,20 @@ func handleRequest(requestChan chan []byte, responseChan chan Response) http.Han
 }
 
 type HTTPServer struct {
-	SigningRequestChan       chan []byte
-	SigningResponseChan      chan Response
-	VerificationRequestChan  chan []byte
-	VerificationResponseChan chan Response
+	RequestChan  chan []byte
+	ResponseChan chan Response
 }
 
 type Response struct {
-	code    int
-	content []byte
+	Code    int
+	Content []byte
 }
 
-func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
+func (srv *HTTPServer) Listen(endpoint string, ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	s := &http.Server{Addr: ":8080"}
-	http.HandleFunc("/sign", handleRequest(srv.SigningRequestChan, srv.SigningResponseChan))
-	http.HandleFunc("/verify", handleRequest(srv.VerificationRequestChan, srv.VerificationResponseChan))
+	http.HandleFunc(endpoint, handleRequest(srv.RequestChan, srv.ResponseChan))
 
 	go func() {
 		<-ctx.Done()
