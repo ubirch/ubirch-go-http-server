@@ -89,7 +89,6 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 		}
 
 		// wait for response from ubirch backend to be forwarded
-		//todo check performance
 		select {
 		case resp := <-srv.ResponseHandler:
 			w.WriteHeader(resp.Code)
