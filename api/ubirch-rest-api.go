@@ -34,7 +34,7 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// only accept POST requests
 		if r.Method != "POST" {
-			returnErrorResponse(w, http.StatusNotFound, "http method not implemented")
+			returnErrorResponse(w, http.StatusNotFound, fmt.Sprintf("%s not implemented", r.Method))
 			return
 		}
 
@@ -51,14 +51,21 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 			pathID := strings.TrimPrefix(r.URL.Path, srv.Endpoint)
 			id, err := uuid.Parse(pathID)
 			if err != nil {
-				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing UUID: %v", err))
+				returnErrorResponse(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
+				return
+			}
+
+			// check if UUID is known
+			idAuth, exists := srv.Auth[id.String()]
+			if !exists {
+				returnErrorResponse(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
 				return
 			}
 
 			// check authorization
-			auth := r.Header.Get("AUTHTOKEN")
-			if auth != srv.Auth[id.String()] {
-				returnErrorResponse(w, http.StatusUnauthorized, fmt.Sprintf("invalid auth token"))
+			reqAuth := r.Header.Get("X-Auth-Token")
+			if reqAuth != idAuth {
+				returnErrorResponse(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 				return
 			}
 
