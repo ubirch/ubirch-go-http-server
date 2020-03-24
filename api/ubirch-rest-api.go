@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -46,8 +47,9 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 
 		// check if request body is a json object
 		if stringInList("application/json", r.Header["Content-Type"]) {
-			// get UUID from header
-			id, err := uuid.Parse(r.Header.Get("UUID"))
+			// get UUID from URL path
+			pathID := strings.TrimPrefix(r.URL.Path, srv.Endpoint)
+			id, err := uuid.Parse(pathID)
 			if err != nil {
 				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing UUID: %v", err))
 				return
@@ -95,6 +97,7 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 type HTTPServer struct {
 	ReceiveHandler  chan []byte
 	ResponseHandler chan Response
+	Endpoint        string
 	Auth            map[string]string
 }
 
@@ -104,11 +107,11 @@ type Response struct {
 	Content []byte
 }
 
-func (srv *HTTPServer) Listen(endpoint string, ctx context.Context, wg *sync.WaitGroup) {
+func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	s := &http.Server{Addr: ":8080"}
-	http.HandleFunc(endpoint, handleRequest(srv))
+	http.HandleFunc(srv.Endpoint, handleRequest(srv))
 
 	go func() {
 		<-ctx.Done()
