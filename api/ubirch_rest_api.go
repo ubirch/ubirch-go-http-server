@@ -28,7 +28,7 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 		}
 
 		// get UUID from URL path
-		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint))
+		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint+"/"))
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
@@ -70,7 +70,7 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 		_ = json.Compact(&compactSortedJson, sortedJson)
 
 		respChan := make(chan HTTPResponse)
-		srv.MessageHandler <- HTTPMessage{ID: id, Msg: compactSortedJson.Bytes(), Response: respChan}
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: compactSortedJson.Bytes(), Auth: reqAuth, Response: respChan}
 
 		// wait for response from ubirch backend to be forwarded
 		resp := <-respChan
@@ -91,6 +91,7 @@ type HTTPServer struct {
 type HTTPMessage struct {
 	ID       uuid.UUID
 	Msg      []byte
+	Auth     string
 	Response chan HTTPResponse
 }
 
@@ -101,20 +102,20 @@ type HTTPResponse struct {
 }
 
 func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
 	s := &http.Server{Addr: ":8080"}
-	http.HandleFunc(srv.Endpoint, handleRequest(srv))
+	http.HandleFunc(srv.Endpoint+"/", handleRequest(srv))
 
 	go func() {
 		<-ctx.Done()
-		log.Println("shutting down http server")
+		log.Printf("shutting down http service (%s)", srv.Endpoint)
 		s.Shutdown(ctx)
-		return
 	}()
 
-	err := s.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		log.Fatalf("error starting http service: %v", err)
-	}
+	go func() {
+		defer wg.Done()
+		err := s.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("error starting http service: %v", err)
+		}
+	}()
 }
