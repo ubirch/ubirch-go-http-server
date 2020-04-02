@@ -13,101 +13,88 @@ import (
 	"sync"
 )
 
-// helper function to determine if a list contains a certain string
-func stringInList(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
-func returnErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	log.Println(message)
-	w.WriteHeader(statusCode)
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(message))
-}
-
 func handleRequest(srv *HTTPServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// only accept POST requests
 		if r.Method != "POST" {
-			returnErrorResponse(w, http.StatusNotFound, fmt.Sprintf("%s not implemented", r.Method))
+			http.Error(w, fmt.Sprintf("%s not implemented", r.Method), http.StatusNotImplemented)
+			return
+		}
+
+		// make sure request body is of type json
+		if strings.ToLower(r.Header.Get("Content-Type")) != "application/json" {
+			http.Error(w, "Wrong request body type", http.StatusBadRequest)
+			return
+		}
+
+		// get UUID from URL path
+		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint))
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+
+		// check if UUID is known
+		idAuth, exists := srv.Auth[id.String()]
+		if !exists {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+
+		// check authorization
+		reqAuth := r.Header.Get("X-Auth-Token")
+		if reqAuth != idAuth {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
 
 		// read request body
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error reading request body: %v", err))
+			http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		// check if request body is a json object
-		if stringInList("application/json", r.Header["Content-Type"]) {
-			// get UUID from URL path
-			pathID := strings.TrimPrefix(r.URL.Path, srv.Endpoint)
-			id, err := uuid.Parse(pathID)
-			if err != nil {
-				returnErrorResponse(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
-				return
-			}
+		// generate a sorted compact rendering of the json formatted request body
+		var reqDump interface{}
+		var compactSortedJson bytes.Buffer
 
-			// check if UUID is known
-			idAuth, exists := srv.Auth[id.String()]
-			if !exists {
-				returnErrorResponse(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
-				return
-			}
-
-			// check authorization
-			reqAuth := r.Header.Get("X-Auth-Token")
-			if reqAuth != idAuth {
-				returnErrorResponse(w, http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
-				return
-			}
-
-			// generate a sorted compact rendering of the json formatted request body before forwarding it to the signer
-			var reqDump interface{}
-			var compactSortedJson bytes.Buffer
-
-			err = json.Unmarshal(reqBody, &reqDump)
-			if err != nil {
-				returnErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("error parsing request body: %v", err))
-				return
-			}
-			// json.Marshal sorts the keys
-			sortedJson, _ := json.Marshal(reqDump)
-			_ = json.Compact(&compactSortedJson, sortedJson)
-
-			srv.ReceiveHandler <- append(id[:], compactSortedJson.Bytes()...)
-
-		} else {
-			srv.ReceiveHandler <- reqBody
+		err = json.Unmarshal(reqBody, &reqDump)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
+			return
 		}
+
+		// json.Marshal sorts the keys
+		sortedJson, _ := json.Marshal(reqDump)
+		_ = json.Compact(&compactSortedJson, sortedJson)
+
+		respChan := make(chan HTTPResponse)
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: compactSortedJson.Bytes(), Response: respChan}
 
 		// wait for response from ubirch backend to be forwarded
-		select {
-		case resp := <-srv.ResponseHandler:
-			w.WriteHeader(resp.Code)
-			for k, v := range resp.Header {
-				w.Header().Set(k, v[0])
-			}
-			w.Write(resp.Content)
+		resp := <-respChan
+		w.WriteHeader(resp.Code)
+		for k, v := range resp.Header {
+			w.Header().Set(k, v[0])
 		}
+		w.Write(resp.Content)
 	}
 }
 
 type HTTPServer struct {
-	ReceiveHandler  chan []byte
-	ResponseHandler chan Response
-	Endpoint        string
-	Auth            map[string]string
+	MessageHandler chan HTTPMessage
+	Endpoint       string
+	Auth           map[string]string
 }
 
-type Response struct {
+type HTTPMessage struct {
+	ID       uuid.UUID
+	Msg      []byte
+	Response chan HTTPResponse
+}
+
+type HTTPResponse struct {
 	Code    int
 	Header  map[string][]string
 	Content []byte
