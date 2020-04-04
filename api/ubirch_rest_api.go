@@ -56,15 +56,8 @@ func handleRequestHash(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		// get authorization
-		authToken := r.Header.Get("X-Auth-Token")
-		if authToken == "" {
-			http.Error(w, "\"X-Auth-Token\" header missing", http.StatusBadRequest)
-			return
-		}
-
 		respChan := make(chan HTTPResponse)
-		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: true, Auth: authToken, Response: respChan}
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: true, Response: respChan}
 
 		// wait for response from ubirch backend to be forwarded
 		forwardResponse(respChan, w)
@@ -86,19 +79,6 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		// get authorization
-		authToken := r.Header.Get("X-Auth-Token")
-		if authToken == "" {
-			http.Error(w, "\"X-Auth-Token\" header missing", http.StatusBadRequest)
-			return
-		}
-
-		// make sure request body is of type json
-		if ContentType(r) != "application/json" {
-			http.Error(w, "Wrong content-type. Expected \"application/json\"", http.StatusBadRequest)
-			return
-		}
-
 		// read request body
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -106,24 +86,31 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		// generate a sorted compact rendering of the json formatted request body
-		var reqDump interface{}
-		var compactSortedJson bytes.Buffer
-
-		err = json.Unmarshal(reqBody, &reqDump)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
+		var message []byte
+		switch ContentType(r) {
+		case "text/plain":
+			message = reqBody
+		case "application/json":
+			// generate a sorted compact rendering of the json formatted request body
+			var reqDump interface{}
+			var compactSortedJson bytes.Buffer
+			err = json.Unmarshal(reqBody, &reqDump)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
+				return
+			}
+			// json.Marshal sorts the keys
+			sortedJson, _ := json.Marshal(reqDump)
+			_ = json.Compact(&compactSortedJson, sortedJson)
+			message = compactSortedJson.Bytes()
+		default:
+			http.Error(w, "Wrong content-type. Expected \"text/plain\" or \"application/json\"", http.StatusBadRequest)
 			return
 		}
 
-		// json.Marshal sorts the keys
-		sortedJson, _ := json.Marshal(reqDump)
-		_ = json.Compact(&compactSortedJson, sortedJson)
-		message := compactSortedJson.Bytes()
-
 		// create HTTPMessage with individual response channel for each request
 		respChan := make(chan HTTPResponse)
-		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: false, Auth: authToken, Response: respChan}
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: false, Response: respChan}
 
 		// wait for response from ubirch backend to be forwarded
 		forwardResponse(respChan, w)
@@ -139,7 +126,6 @@ type HTTPMessage struct {
 	ID              uuid.UUID
 	Msg             []byte
 	IsAlreadyHashed bool
-	Auth            string
 	Response        chan HTTPResponse
 }
 
@@ -157,7 +143,7 @@ func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 	go func() {
 		<-ctx.Done()
 		log.Printf("shutting down http service (%s)", srv.Endpoint)
-		s.Shutdown(ctx)
+		_ = s.Shutdown(ctx)
 	}()
 
 	go func() {
