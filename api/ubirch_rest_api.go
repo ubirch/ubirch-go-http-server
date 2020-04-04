@@ -13,7 +13,22 @@ import (
 	"sync"
 )
 
-func handleRequest(srv *HTTPServer) http.HandlerFunc {
+// helper function to retrieve value of "content-type" in headers
+func ContentType(r *http.Request) string {
+	return strings.ToLower(r.Header.Get("content-type"))
+}
+
+// blocks until response is received and forwards it to sender
+func forwardResponse(respChan chan HTTPResponse, w http.ResponseWriter) {
+	resp := <-respChan
+	w.WriteHeader(resp.Code)
+	for k, v := range resp.Header {
+		w.Header().Set(k, v[0])
+	}
+	_, _ = w.Write(resp.Content)
+}
+
+func handleRequestHash(srv *HTTPServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// only accept POST requests
 		if r.Method != "POST" {
@@ -21,30 +36,66 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		// make sure request body is of type json
-		if strings.ToLower(r.Header.Get("Content-Type")) != "application/json" {
-			http.Error(w, "Wrong request body type", http.StatusBadRequest)
+		// get UUID from URL path
+		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint+"-hash/"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		// make sure request body is of type plain test
+		if ContentType(r) != "text/plain" {
+			http.Error(w, "Wrong content-type. Expected \"text/plain\"", http.StatusBadRequest)
+			return
+		}
+
+		// read request body
+		message, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		// get authorization
+		authToken := r.Header.Get("X-Auth-Token")
+		if authToken == "" {
+			http.Error(w, "\"X-Auth-Token\" header missing", http.StatusBadRequest)
+			return
+		}
+
+		respChan := make(chan HTTPResponse)
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: true, Auth: authToken, Response: respChan}
+
+		// wait for response from ubirch backend to be forwarded
+		forwardResponse(respChan, w)
+	}
+}
+
+func handleRequestData(srv *HTTPServer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// only accept POST requests
+		if r.Method != "POST" {
+			http.Error(w, fmt.Sprintf("%s not implemented", r.Method), http.StatusNotImplemented)
 			return
 		}
 
 		// get UUID from URL path
 		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint+"/"))
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			http.NotFound(w, r)
 			return
 		}
 
-		// check if UUID is known
-		idAuth, exists := srv.Auth[id.String()]
-		if !exists {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		// get authorization
+		authToken := r.Header.Get("X-Auth-Token")
+		if authToken == "" {
+			http.Error(w, "\"X-Auth-Token\" header missing", http.StatusBadRequest)
 			return
 		}
 
-		// check authorization
-		reqAuth := r.Header.Get("X-Auth-Token")
-		if reqAuth != idAuth {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		// make sure request body is of type json
+		if ContentType(r) != "application/json" {
+			http.Error(w, "Wrong content-type. Expected \"application/json\"", http.StatusBadRequest)
 			return
 		}
 
@@ -68,31 +119,28 @@ func handleRequest(srv *HTTPServer) http.HandlerFunc {
 		// json.Marshal sorts the keys
 		sortedJson, _ := json.Marshal(reqDump)
 		_ = json.Compact(&compactSortedJson, sortedJson)
+		message := compactSortedJson.Bytes()
 
+		// create HTTPMessage with individual response channel for each request
 		respChan := make(chan HTTPResponse)
-		srv.MessageHandler <- HTTPMessage{ID: id, Msg: compactSortedJson.Bytes(), Auth: reqAuth, Response: respChan}
+		srv.MessageHandler <- HTTPMessage{ID: id, Msg: message, IsAlreadyHashed: false, Auth: authToken, Response: respChan}
 
 		// wait for response from ubirch backend to be forwarded
-		resp := <-respChan
-		w.WriteHeader(resp.Code)
-		for k, v := range resp.Header {
-			w.Header().Set(k, v[0])
-		}
-		w.Write(resp.Content)
+		forwardResponse(respChan, w)
 	}
 }
 
 type HTTPServer struct {
 	MessageHandler chan HTTPMessage
 	Endpoint       string
-	Auth           map[string]string
 }
 
 type HTTPMessage struct {
-	ID       uuid.UUID
-	Msg      []byte
-	Auth     string
-	Response chan HTTPResponse
+	ID              uuid.UUID
+	Msg             []byte
+	IsAlreadyHashed bool
+	Auth            string
+	Response        chan HTTPResponse
 }
 
 type HTTPResponse struct {
@@ -101,9 +149,10 @@ type HTTPResponse struct {
 	Content []byte
 }
 
-func (srv *HTTPServer) Listen(ctx context.Context, wg *sync.WaitGroup) {
+func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 	s := &http.Server{Addr: ":8080"}
-	http.HandleFunc(srv.Endpoint+"/", handleRequest(srv))
+	http.HandleFunc(srv.Endpoint+"/", handleRequestData(srv))
+	http.HandleFunc(srv.Endpoint+"-hash/", handleRequestHash(srv))
 
 	go func() {
 		<-ctx.Done()
