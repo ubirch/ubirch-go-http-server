@@ -13,9 +13,14 @@ import (
 	"sync"
 )
 
-// helper function to retrieve value of "content-type" in headers
+// helper function to get "content-type" from headers
 func ContentType(r *http.Request) string {
 	return strings.ToLower(r.Header.Get("content-type"))
+}
+
+// helper function to get "x-auth-token" from headers
+func XAuthToken(r *http.Request) string {
+	return r.Header.Get("x-auth-token")
 }
 
 // blocks until response is received and forwards it to sender
@@ -40,6 +45,12 @@ func handleRequestHash(srv *HTTPServer) http.HandlerFunc {
 		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint+"-hash/"))
 		if err != nil {
 			http.NotFound(w, r)
+			return
+		}
+
+		// check authorization
+		if XAuthToken(r) != srv.Auth {
+			http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 			return
 		}
 
@@ -76,6 +87,12 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, srv.Endpoint+"/"))
 		if err != nil {
 			http.NotFound(w, r)
+			return
+		}
+
+		// check authorization
+		if XAuthToken(r) != srv.Auth {
+			http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 			return
 		}
 
@@ -120,6 +137,7 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 type HTTPServer struct {
 	MessageHandler chan HTTPMessage
 	Endpoint       string
+	Auth           string
 }
 
 type HTTPMessage struct {
