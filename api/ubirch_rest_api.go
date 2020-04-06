@@ -54,9 +54,10 @@ func handleRequestHash(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		// make sure request body is of type plain test
-		if ContentType(r) != "text/plain" {
-			http.Error(w, "Wrong content-type. Expected \"text/plain\"", http.StatusBadRequest)
+		// make sure request body is of correct type
+		expectedType := "application/octet-stream"
+		if ContentType(r) != expectedType {
+			http.Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
 			return
 		}
 
@@ -96,6 +97,13 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
+		// make sure request body is of correct type
+		expectedType := "application/json"
+		if ContentType(r) != expectedType {
+			http.Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
+			return
+		}
+
 		// read request body
 		reqBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -103,27 +111,18 @@ func handleRequestData(srv *HTTPServer) http.HandlerFunc {
 			return
 		}
 
-		var message []byte
-		switch ContentType(r) {
-		case "text/plain":
-			message = reqBody
-		case "application/json":
-			// generate a sorted compact rendering of the json formatted request body
-			var reqDump interface{}
-			var compactSortedJson bytes.Buffer
-			err = json.Unmarshal(reqBody, &reqDump)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
-				return
-			}
-			// json.Marshal sorts the keys
-			sortedJson, _ := json.Marshal(reqDump)
-			_ = json.Compact(&compactSortedJson, sortedJson)
-			message = compactSortedJson.Bytes()
-		default:
-			http.Error(w, "Wrong content-type. Expected \"text/plain\" or \"application/json\"", http.StatusBadRequest)
+		// generate a sorted compact rendering of the json formatted request body
+		var reqDump interface{}
+		var compactSortedJson bytes.Buffer
+		err = json.Unmarshal(reqBody, &reqDump)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
 			return
 		}
+		// json.Marshal sorts the keys
+		sortedJson, _ := json.Marshal(reqDump)
+		_ = json.Compact(&compactSortedJson, sortedJson)
+		message := compactSortedJson.Bytes()
 
 		// create HTTPMessage with individual response channel for each request
 		respChan := make(chan HTTPResponse)
