@@ -5,13 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-chi/chi"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/go-chi/chi"
+	"github.com/google/uuid"
 )
 
 // helper function to get "content-type" from headers
@@ -141,15 +143,26 @@ func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 	router.Post("/{uuid}", srv.handleRequestData)
 	router.Post("/{uuid}/hash", srv.handleRequestHash)
 
+	server := &http.Server{
+		Addr:         ":8080",
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  75 * time.Second,
+	}
+
 	go func() {
 		<-ctx.Done()
 		log.Printf("shutting down http server")
-		// TODO _ = s.Shutdown(ctx)
+		server.SetKeepAlivesEnabled(false) // disallow clients to create new long-running conns
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("Failed to gracefully shutdown server: %s", err)
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		err := http.ListenAndServe(":8080", router)
+		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("error starting http service: %v", err)
 		}
