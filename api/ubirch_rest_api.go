@@ -38,7 +38,7 @@ func forwardResponse(respChan chan HTTPResponse, w http.ResponseWriter) {
 
 type HTTPServer struct {
 	MessageHandler chan HTTPMessage
-	Auth           string
+	AuthTokens     map[string]string
 }
 
 type HTTPMessage struct {
@@ -62,8 +62,15 @@ func (srv *HTTPServer) handleRequestHash(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// check if UUID is known
+	idAuthToken, exists := srv.AuthTokens[id.String()]
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+
 	// check authorization
-	if XAuthToken(r) != srv.Auth {
+	if XAuthToken(r) != idAuthToken {
 		http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 		return
 	}
@@ -97,8 +104,15 @@ func (srv *HTTPServer) handleRequestData(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// check if UUID is known
+	idAuthToken, exists := srv.AuthTokens[id.String()]
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+
 	// check authorization
-	if XAuthToken(r) != srv.Auth {
+	if XAuthToken(r) != idAuthToken {
 		http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 		return
 	}
