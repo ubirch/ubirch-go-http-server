@@ -28,6 +28,7 @@ func shutdown(signals chan os.Signal, wg *sync.WaitGroup, cancel context.CancelF
 }
 
 func main() {
+	whitelist := map[string]string{"825255ef-a9cf-42e9-8839-ada9a81f99cd": "1234567890_password"}
 
 	// create a waitgroup that contains all asynchronous operations
 	// a cancellable context is used to stop the operations gracefully
@@ -39,24 +40,17 @@ func main() {
 	go shutdown(signals, &wg, cancel)
 
 	// create a messages channel that parses the http message and creates UPPs
-	msgsToSign := make(chan []byte, 100)
-
-	// create a messages channel that hashes messages and fetches the UPP to verify
-	msgsToVrfy := make(chan []byte, 100)
+	msgsToSign := make(chan api.HTTPMessage, 100)
 
 	// listen to messages
-	server := api.HTTPServer{SigningRequestChan: msgsToSign, VerificationRequestChan: msgsToVrfy}
-	go server.Listen(ctx, &wg)
+	httpSrvSign := api.HTTPServer{MessageHandler: msgsToSign, AuthTokens: whitelist}
+	httpSrvSign.Serve(ctx, &wg)
 	wg.Add(1)
 
 	for {
-		select {
-		case vMsg := <-msgsToVrfy:
-			log.Println("msgsToVrfy:")
-			log.Println(string(vMsg))
-		case sMsg := <-msgsToSign:
-			log.Println("msgsToSign:")
-			log.Println(string(sMsg))
-		}
+		sMsg := <-msgsToSign
+		log.Println("received message:")
+		log.Println("UUID: " + sMsg.ID.String())
+		log.Println("Message: " + string(sMsg.Msg))
 	}
 }
