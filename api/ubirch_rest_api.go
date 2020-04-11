@@ -33,7 +33,8 @@ func forwardResponse(respChan chan HTTPResponse, w http.ResponseWriter) {
 	for k, v := range resp.Header {
 		w.Header().Set(k, v[0])
 	}
-	_, _ = w.Write(resp.Content)
+	_, err := w.Write(resp.Content)
+	log.Printf("http server: error writing response: %s", err)
 }
 
 type HTTPServer struct {
