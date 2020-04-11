@@ -44,8 +44,8 @@ func main() {
 
 	// listen to messages
 	httpSrvSign := api.HTTPServer{MessageHandler: msgsToSign, AuthTokens: whitelist}
-	httpSrvSign.Serve(ctx, &wg)
 	wg.Add(1)
+	httpSrvSign.Serve(ctx, &wg)
 
 	for {
 		sMsg := <-msgsToSign
