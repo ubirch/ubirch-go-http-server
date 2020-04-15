@@ -35,7 +35,7 @@ func forwardResponse(respChan chan HTTPResponse, w http.ResponseWriter) {
 	}
 	_, err := w.Write(resp.Content)
 	if err != nil {
-		log.Printf("http server: error writing response: %s", err)
+		log.Printf("http server encountered error writing response: %s", err)
 	}
 }
 
