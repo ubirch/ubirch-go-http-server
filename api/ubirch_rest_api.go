@@ -110,7 +110,7 @@ func (srv *HTTPServer) handleRequestData(w http.ResponseWriter, r *http.Request)
 	// check if UUID is known
 	idAuthToken, exists := srv.AuthTokens[id.String()]
 	if !exists {
-		http.NotFound(w, r)
+		http.Error(w, fmt.Sprintf("unknown device %s", id.String()), http.StatusUnauthorized)
 		return
 	}
 
@@ -143,8 +143,16 @@ func (srv *HTTPServer) handleRequestData(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// json.Marshal sorts the keys
-	sortedJson, _ := json.Marshal(reqDump)
-	_ = json.Compact(&compactSortedJson, sortedJson)
+	sortedJson, err := json.Marshal(reqDump)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error serializing json object: %v", err), http.StatusBadRequest)
+		return
+	}
+	err = json.Compact(&compactSortedJson, sortedJson)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error compacting json object: %v", err), http.StatusBadRequest)
+		return
+	}
 	message := compactSortedJson.Bytes()
 
 	// create HTTPMessage with individual response channel for each request
@@ -163,9 +171,9 @@ func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 	server := &http.Server{
 		Addr:         ":8080",
 		Handler:      router,
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  180 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  75 * time.Second,
 	}
 
 	go func() {
