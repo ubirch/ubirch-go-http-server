@@ -177,6 +177,7 @@ func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 	}
 
 	go func() {
+		defer wg.Done()
 		<-ctx.Done()
 		log.Printf("shutting down http server")
 		server.SetKeepAlivesEnabled(false) // disallow clients to create new long-running conns
@@ -185,11 +186,8 @@ func (srv *HTTPServer) Serve(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	}()
 
-	go func() {
-		defer wg.Done()
-		err := server.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			log.Fatalf("error starting http service: %v", err)
-		}
-	}()
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		log.Fatalf("error starting http service: %v", err)
+	}
 }
