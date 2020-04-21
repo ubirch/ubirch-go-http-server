@@ -16,6 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// wrapper for http.Error that additionally logs the error message to std.Output
+func Error(w http.ResponseWriter, error string, code int) {
+	log.Printf("HTTP server error: " + error)
+	http.Error(w, error, code)
+}
+
 // helper function to get "content-type" from headers
 func ContentType(r *http.Request) string {
 	return strings.ToLower(r.Header.Get("content-type"))
@@ -35,7 +41,7 @@ func forwardResponse(respChan chan HTTPResponse, w http.ResponseWriter) {
 	}
 	_, err := w.Write(resp.Content)
 	if err != nil {
-		log.Printf("http server encountered error writing response: %s", err)
+		log.Printf("HTTP server encountered error writing response: %s", err)
 	}
 }
 
@@ -61,34 +67,34 @@ func (srv *HTTPServer) handleRequestHash(w http.ResponseWriter, r *http.Request)
 	// get UUID from URL
 	id, err := uuid.Parse(chi.URLParam(r, "uuid"))
 	if err != nil {
-		http.NotFound(w, r)
+		Error(w, "page not found", http.StatusNotFound)
 		return
 	}
 
 	// check if UUID is known
 	idAuthToken, exists := srv.AuthTokens[id.String()]
 	if !exists {
-		http.NotFound(w, r)
+		Error(w, fmt.Sprintf("unknown device %s", id.String()), http.StatusNotFound)
 		return
 	}
 
 	// check authorization
 	if XAuthToken(r) != idAuthToken {
-		http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
+		Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 		return
 	}
 
 	// make sure request body is of correct type
 	expectedType := "application/octet-stream"
 	if ContentType(r) != expectedType {
-		http.Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
 		return
 	}
 
 	// read request body
 	message, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("unable to read request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -103,34 +109,34 @@ func (srv *HTTPServer) handleRequestData(w http.ResponseWriter, r *http.Request)
 	// get UUID from URL
 	id, err := uuid.Parse(chi.URLParam(r, "uuid"))
 	if err != nil {
-		http.NotFound(w, r)
+		Error(w, "page not found", http.StatusNotFound)
 		return
 	}
 
 	// check if UUID is known
 	idAuthToken, exists := srv.AuthTokens[id.String()]
 	if !exists {
-		http.Error(w, fmt.Sprintf("unknown device %s", id.String()), http.StatusUnauthorized)
+		Error(w, fmt.Sprintf("unknown device %s", id.String()), http.StatusNotFound)
 		return
 	}
 
 	// check authorization
 	if XAuthToken(r) != idAuthToken {
-		http.Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
+		Error(w, "invalid \"X-Auth-Token\"", http.StatusUnauthorized)
 		return
 	}
 
 	// make sure request body is of correct type
 	expectedType := "application/json"
 	if ContentType(r) != expectedType {
-		http.Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("Wrong content-type. Expected \"%s\"", expectedType), http.StatusBadRequest)
 		return
 	}
 
 	// read request body
 	reqBody, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("unable to read request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -139,18 +145,18 @@ func (srv *HTTPServer) handleRequestData(w http.ResponseWriter, r *http.Request)
 	var compactSortedJson bytes.Buffer
 	err = json.Unmarshal(reqBody, &reqDump)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error parsing request body: %v", err), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("unable to parse request body: %v", err), http.StatusBadRequest)
 		return
 	}
 	// json.Marshal sorts the keys
 	sortedJson, err := json.Marshal(reqDump)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error serializing json object: %v", err), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("unable to serialize json object: %v", err), http.StatusBadRequest)
 		return
 	}
 	err = json.Compact(&compactSortedJson, sortedJson)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error compacting json object: %v", err), http.StatusBadRequest)
+		Error(w, fmt.Sprintf("unable to compact json object: %v", err), http.StatusBadRequest)
 		return
 	}
 	message := compactSortedJson.Bytes()
